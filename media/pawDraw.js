@@ -238,12 +238,16 @@
         /**
          * 
          * @param {string} evalPhase
-         * @param {number} iou 
-         * @param {number} dis 
-         * @param {number} sim 
+         * @param {object} data
+         * @param {number} i
+         * @param {number} j
          * @returns 
          */
-        predict(evalPhase, iou, dis, sim) {
+        predict(evalPhase, data, i, j) {
+            const iou = data.mat.ious[i][j];
+            const dis = data.mat.dist[i][j];
+            const sim = data.mat.sims[i][j];
+            const len = data.left.skipped[i];
             if (evalPhase !== 'default') {
                 try {
                     var pred = true;
@@ -252,9 +256,9 @@
 
                 }
             }
-            if (iou > 0.5) { return true; }
-            if (iou < 0.1) { return false; }
-            if (sim > 0.8) { return true; }
+            if (iou > 0.5 && dis < 0.2) { return true; }
+            if (dis / len > 0.1) { return false; }
+            if (sim > 0.9) { return true; }
             return false;
         }
 
@@ -284,22 +288,22 @@
                 this.ptr = data.length - 1;
             }
             const datai = data[this.ptr];
-            this.text.textContent = 'generator class: ' + this.srcData.class + '; ' + 'frame index: ' + datai[0] + '; ' + '[' + this.ptr + '/' + data.length + ']';
+            this.text.textContent = 'generator class: ' + this.srcData.class + '; ' + 'frame index: ' + datai.real_frame + '; ' + '[' + this.ptr + '/' + data.length + ']';
 
 
 
-            const ious = datai[6];
-            const dis = datai[7];
-            const sims = datai[8];
-            const gtsims = datai[9];
-            const gtmasks = datai[10];
+            const ious = datai.mat.ious;
+            const dis = datai.mat.dist;
+            const sims = datai.mat.sims;
+            const gtsims = datai.mat.gt_sims;
+            const gtmasks = datai.mat.gt_masks;
             var items2show = [];
             var rowRec = {};
             var colRec = {};
-            for (var i = 0; i < datai[2].length; i++) {
-                for (var j = 0; j < datai[1].length; j++) {
+            for (var i = 0; i < datai.left.bboxes.length; i++) {
+                for (var j = 0; j < datai.right.bboxes.length; j++) {
                     if (gtmasks[i][j]) {
-                        const pred = this.predict(this.evalPhase, ious[i][j], dis[i][j], sims[i][j]);
+                        const pred = this.predict(this.evalPhase, datai, i, j);
                         if (pred && gtsims[i][j] !== true || !pred && gtsims[i][j] === true) {
                             items2show.push([i, j]);
                             rowRec[i] = true;
@@ -329,19 +333,21 @@
                 this.drawingCtx.strokeStyle = 'blue';
                 this.drawingCtx.font = normalfont.toString() + 'px Arial';
                 this.drawingCtx.strokeRect(margin, rowIdx * (boxL + margin) + margin, boxL, boxL);
-                this.drawingCtx.strokeText(datai[5][row].toString(), margin + boxL / 7, margin + rowIdx * (boxL + margin) + boxL * 0.8);
+                this.drawingCtx.strokeText(datai.left.uids[row].toString(), margin + boxL / 3, margin + rowIdx * (boxL + margin) + boxL * 0.4);
+                this.drawingCtx.strokeText(datai.left.gids[row].toString(), margin + boxL / 7, margin + rowIdx * (boxL + margin) + boxL * 0.8);
                 this.drawingCtx.strokeStyle = 'gray';
                 this.drawingCtx.font = smallfont.toString() + 'px Arial';
-                this.drawingCtx.strokeText('/ ' + datai[3][row].toString(), margin + boxL / 2, margin + rowIdx * (boxL + margin) + boxL * 0.8);
-                for (var gt = 0; gt < datai[1].length; gt++) {
-                    if (datai[4][gt] >= 0 && datai[4][gt] === datai[5][parseInt(row)]) {
+                this.drawingCtx.strokeText('/ ' + datai.left.skipped[row].toString(), margin + boxL / 2, margin + rowIdx * (boxL + margin) + boxL * 0.8);
+                for (var gt = 0; gt < datai.right.bboxes.length; gt++) {
+                    if (datai.right.gids[gt] >= 0 && datai.right.gids[gt] === datai.left.gids[row]) {
                         break;
                     }
                 }
-                if (gt >= datai[1].length) {
+                if (gt >= datai.right.bboxes.length) {
                     gt = -1;
                 }
                 this.drawingCtx.strokeText(this.formatinfo(parseInt(row), gt, ious, dis, sims), margin - 5, margin + rowIdx * (boxL + margin) + boxL * 1.2);
+                this.drawingCtx.strokeText('occ: ' + datai.left.occluder[parseInt(row)], margin - 5, margin + rowIdx * (boxL + margin) + boxL * 1.4);
                 rowIdx += 1;
             }
 
@@ -352,17 +358,17 @@
                 this.drawingCtx.font = normalfont.toString() + 'px Arial';
                 this.drawingCtx.strokeRect(neededW - margin - boxL, colIdx * (boxL + margin) + margin, boxL, boxL);
                 const oldWidth = this.drawingCtx.lineWidth;
-                this.drawingCtx.strokeText(datai[4][col].toString(), neededW - margin - boxL + boxL / 7, margin + colIdx * (boxL + margin) + boxL * 0.8);
+                this.drawingCtx.strokeText(datai.right.gids[col].toString(), neededW - margin - boxL + boxL / 7, margin + colIdx * (boxL + margin) + boxL * 0.8);
                 this.drawingCtx.strokeStyle = 'gray';
                 this.drawingCtx.font = smallfont.toString() + 'px Arial';
-                this.drawingCtx.strokeText('/ ' + datai[1][col][4].toFixed(2).toString(), neededW - margin - boxL + boxL / 2, margin + colIdx * (boxL + margin) + boxL * 0.8);
+                this.drawingCtx.strokeText('/ ' + datai.right.bboxes[col][4].toFixed(2).toString(), neededW - margin - boxL + boxL / 2, margin + colIdx * (boxL + margin) + boxL * 0.8);
                 this.drawingCtx.font = smallfont.toString() + 'px Arial';
-                for (var gt = 0; gt < datai[2].length; gt++) {
-                    if (datai[5][gt] >= 0 && datai[5][gt] === datai[4][parseInt(col)]) {
+                for (var gt = 0; gt < datai.left.bboxes.length; gt++) {
+                    if (datai.left.gids[gt] >= 0 && datai.left.gids[gt] === datai.right.gids[col]) {
                         break;
                     }
                 }
-                if (gt >= datai[2].length) {
+                if (gt >= datai.left.bboxes.length) {
                     gt = -1;
                 }
                 const info = this.formatinfo(gt, parseInt(col), ious, dis, sims);
